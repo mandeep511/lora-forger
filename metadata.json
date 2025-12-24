@@ -1,0 +1,5 @@
+{
+  "name": "LoRA Dataset Forger",
+  "description": "A professional tool for creating image training datasets. Auto-caption images using Gemini Vision models with structured outputs, adhering to strict LoRA training formats.",
+  "requestFramePermissions": []
+}
