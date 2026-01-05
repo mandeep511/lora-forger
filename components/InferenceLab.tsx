@@ -5,6 +5,7 @@ import { generateInferencePrompt } from "../services/geminiService";
 interface InferenceLabProps {
   triggerWord: string;
   isNSFW: boolean;
+  onTriggerError: () => void;
 }
 
 const STYLES = [
@@ -18,7 +19,7 @@ const STYLES = [
   "Fantasy RPG",
 ];
 
-export const InferenceLab: React.FC<InferenceLabProps> = ({ triggerWord, isNSFW }) => {
+export const InferenceLab: React.FC<InferenceLabProps> = ({ triggerWord, isNSFW, onTriggerError }) => {
   const [userText, setUserText] = useState("");
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
@@ -45,6 +46,10 @@ export const InferenceLab: React.FC<InferenceLabProps> = ({ triggerWord, isNSFW 
   };
 
   const handleGenerate = async () => {
+    if (!triggerWord.trim()) {
+      onTriggerError();
+      return;
+    }
     if (!userText && !referenceImage) return;
     
     setIsGenerating(true);

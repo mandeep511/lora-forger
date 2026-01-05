@@ -22,7 +22,8 @@ import { InferenceLab } from "./components/InferenceLab";
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.DATASET);
   const [images, setImages] = useState<DatasetImage[]>([]);
-  const [triggerWord, setTriggerWord] = useState<string>("OHWX");
+  const [triggerWord, setTriggerWord] = useState<string>("");
+  const [triggerError, setTriggerError] = useState<boolean>(false);
   const [isNSFW, setIsNSFW] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
@@ -90,6 +91,11 @@ const App: React.FC = () => {
   };
 
   const handleGenerateAll = async () => {
+    if (!triggerWord.trim()) {
+      setTriggerError(true);
+      return;
+    }
+
     setIsGenerating(true);
     const pendingImages = images.filter(
       (img) =>
@@ -105,8 +111,19 @@ const App: React.FC = () => {
   };
 
   const handleRegenerate = (id: string) => {
+    if (!triggerWord.trim()) {
+      setTriggerError(true);
+      return;
+    }
     const img = images.find((i) => i.id === id);
     if (img) processImage(img);
+  };
+
+  const handleTriggerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setTriggerWord(e.target.value);
+    if (e.target.value.trim()) {
+      setTriggerError(false);
+    }
   };
 
   // --- Export Logic ---
@@ -126,7 +143,7 @@ const App: React.FC = () => {
       const url = window.URL.createObjectURL(content);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `lora_dataset_${triggerWord.toLowerCase()}_${new Date().getTime()}.zip`;
+      a.download = `lora_dataset_${triggerWord.toLowerCase() || "untitled"}_${new Date().getTime()}.zip`;
       a.click();
       window.URL.revokeObjectURL(url);
     } catch (err) {
@@ -158,7 +175,7 @@ const App: React.FC = () => {
                 </div>
                 <div>
                     <h1 className="text-xl font-bold tracking-tight text-slate-800 leading-none">LoRA Forger</h1>
-                    <span className="text-xs font-semibold text-slate-400">Gemini 3 Edition</span>
+                    <span className="text-xs font-semibold text-slate-400">Make LORA datasets</span>
                 </div>
             </div>
 
@@ -191,13 +208,19 @@ const App: React.FC = () => {
             {/* Right: Controls */}
             <div className="flex items-center gap-3">
                  {/* Trigger Input */}
-                 <div className="hidden md:flex items-center gap-2 bg-white/50 border border-slate-200 rounded-2xl px-3 py-1.5 focus-within:bg-white focus-within:border-indigo-300 transition-all shadow-sm">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Trigger</span>
+                 <div className={`hidden md:flex items-center gap-2 rounded-2xl px-3 py-1.5 transition-all shadow-sm border ${
+                     triggerError 
+                     ? "bg-red-50 border-red-400 ring-2 ring-red-200 animate-pulse" 
+                     : "bg-white/50 border-slate-200 focus-within:bg-white focus-within:border-indigo-300"
+                 }`}>
+                    <span className={`text-[10px] font-bold uppercase tracking-wider ${triggerError ? "text-red-500" : "text-slate-400"}`}>
+                        {triggerError ? "Required!" : "Trigger"}
+                    </span>
                     <input
                         type="text"
                         value={triggerWord}
-                        onChange={(e) => setTriggerWord(e.target.value)}
-                        className={`bg-transparent border-none outline-none text-sm font-bold w-20 text-center ${activeColorClass}`}
+                        onChange={handleTriggerChange}
+                        className={`bg-transparent border-none outline-none text-sm font-bold w-20 text-center ${triggerError ? "text-red-600 placeholder:text-red-300" : activeColorClass}`}
                         placeholder="OHWX"
                     />
                 </div>
@@ -331,7 +354,11 @@ const App: React.FC = () => {
         )}
 
         {activeTab === AppTab.INFERENCE && (
-            <InferenceLab triggerWord={triggerWord} isNSFW={isNSFW} />
+            <InferenceLab 
+                triggerWord={triggerWord} 
+                isNSFW={isNSFW} 
+                onTriggerError={() => setTriggerError(true)}
+            />
         )}
 
       </main>
