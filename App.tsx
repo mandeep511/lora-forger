@@ -1,4 +1,5 @@
-import React, { useState, useRef } from "react";
+
+import React, { useState, useRef, useEffect } from "react";
 import JSZip from "jszip";
 import { v4 as uuidv4 } from "uuid";
 import {
@@ -12,12 +13,15 @@ import {
   Flame,
   Wand2,
   Database,
-  Heart
+  Heart,
+  Settings,
+  ChevronDown
 } from "lucide-react";
-import { DatasetImage, ProcessingStatus, AppTab } from "./types";
-import { generateImageCaption } from "./services/geminiService";
+import { DatasetImage, ProcessingStatus, AppTab, PromptTemplate, DEFAULT_DATASET_TEMPLATE_ID, DEFAULT_INFERENCE_TEMPLATE_ID } from "./types";
+import { generateImageCaption, DEFAULT_DATASET_PROMPT_CONTENT, DEFAULT_INFERENCE_PROMPT_CONTENT } from "./services/geminiService";
 import { ImageCard } from "./components/ImageCard";
 import { InferenceLab } from "./components/InferenceLab";
+import { PromptTuner } from "./components/PromptTuner";
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.DATASET);
@@ -27,13 +31,86 @@ const App: React.FC = () => {
   const [isNSFW, setIsNSFW] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isZipping, setIsZipping] = useState(false);
+  
+  // --- Prompt Management State ---
+  const [isPromptTunerOpen, setIsPromptTunerOpen] = useState(false);
+  const [prompts, setPrompts] = useState<PromptTemplate[]>([]);
+  const [selectedDatasetPromptId, setSelectedDatasetPromptId] = useState<string>(DEFAULT_DATASET_TEMPLATE_ID);
+  const [selectedInferencePromptId, setSelectedInferencePromptId] = useState<string>(DEFAULT_INFERENCE_TEMPLATE_ID);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Theme Colors based on active tab ---
-  // Dataset = Sky Blue, Inference = Sakura Pink
   const activeColorClass = activeTab === AppTab.DATASET ? "text-sky-500" : "text-pink-500";
   const activeBgClass = activeTab === AppTab.DATASET ? "bg-sky-500" : "bg-pink-500";
   const activeLightBgClass = activeTab === AppTab.DATASET ? "bg-sky-50" : "bg-pink-50";
+
+  // --- Initialization ---
+  useEffect(() => {
+    // Load prompts from local storage or set defaults
+    const storedPrompts = localStorage.getItem('lora_forger_prompts');
+    if (storedPrompts) {
+      setPrompts(JSON.parse(storedPrompts));
+    } else {
+      const defaults: PromptTemplate[] = [
+        {
+          id: DEFAULT_DATASET_TEMPLATE_ID,
+          name: 'Default (Z-Image-Turbo)',
+          content: DEFAULT_DATASET_PROMPT_CONTENT,
+          type: 'DATASET',
+          isDefault: true,
+          lastModified: Date.now()
+        },
+        {
+          id: DEFAULT_INFERENCE_TEMPLATE_ID,
+          name: 'Default (Z-Image-Turbo)',
+          content: DEFAULT_INFERENCE_PROMPT_CONTENT,
+          type: 'INFERENCE',
+          isDefault: true,
+          lastModified: Date.now()
+        }
+      ];
+      setPrompts(defaults);
+      localStorage.setItem('lora_forger_prompts', JSON.stringify(defaults));
+    }
+    
+    // Load last selections
+    const lastDatasetId = localStorage.getItem('selected_dataset_prompt_id');
+    const lastInferenceId = localStorage.getItem('selected_inference_prompt_id');
+    if (lastDatasetId) setSelectedDatasetPromptId(lastDatasetId);
+    if (lastInferenceId) setSelectedInferencePromptId(lastInferenceId);
+  }, []);
+
+  const savePromptsToStorage = (newPrompts: PromptTemplate[]) => {
+    setPrompts(newPrompts);
+    localStorage.setItem('lora_forger_prompts', JSON.stringify(newPrompts));
+  };
+
+  const handleSavePrompt = (updatedPrompt: PromptTemplate) => {
+    const exists = prompts.find(p => p.id === updatedPrompt.id);
+    let newPrompts;
+    if (exists) {
+      newPrompts = prompts.map(p => p.id === updatedPrompt.id ? updatedPrompt : p);
+    } else {
+      newPrompts = [...prompts, updatedPrompt];
+    }
+    savePromptsToStorage(newPrompts);
+  };
+
+  const handleDeletePrompt = (id: string) => {
+    const newPrompts = prompts.filter(p => p.id !== id);
+    savePromptsToStorage(newPrompts);
+    // Reset selection if deleted
+    if (activeTab === AppTab.DATASET && id === selectedDatasetPromptId) {
+       setSelectedDatasetPromptId(DEFAULT_DATASET_TEMPLATE_ID);
+    } else if (activeTab === AppTab.INFERENCE && id === selectedInferencePromptId) {
+       setSelectedInferencePromptId(DEFAULT_INFERENCE_TEMPLATE_ID);
+    }
+  };
+
+  const activePrompt = prompts.find(p => 
+    p.id === (activeTab === AppTab.DATASET ? selectedDatasetPromptId : selectedInferencePromptId)
+  );
 
   // --- File Handling ---
 
@@ -76,7 +153,10 @@ const App: React.FC = () => {
     updateImage(image.id, { status: ProcessingStatus.PROCESSING, errorMessage: undefined });
 
     try {
-      const result = await generateImageCaption(image.file, triggerWord, isNSFW);
+      // Find the prompt template object
+      const template = prompts.find(p => p.id === selectedDatasetPromptId) || prompts[0];
+      
+      const result = await generateImageCaption(image.file, triggerWord, isNSFW, template);
       updateImage(image.id, {
         status: ProcessingStatus.COMPLETED,
         caption: result.caption,
@@ -161,9 +241,30 @@ const App: React.FC = () => {
     processing: images.filter(i => i.status === ProcessingStatus.PROCESSING).length,
   };
 
+  const handleSelectPrompt = (id: string) => {
+    if (activeTab === AppTab.DATASET) {
+      setSelectedDatasetPromptId(id);
+      localStorage.setItem('selected_dataset_prompt_id', id);
+    } else {
+      setSelectedInferencePromptId(id);
+      localStorage.setItem('selected_inference_prompt_id', id);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen text-slate-600">
       
+      <PromptTuner 
+        isOpen={isPromptTunerOpen}
+        onClose={() => setIsPromptTunerOpen(false)}
+        type={activeTab === AppTab.DATASET ? 'DATASET' : 'INFERENCE'}
+        prompts={prompts}
+        activePromptId={activeTab === AppTab.DATASET ? selectedDatasetPromptId : selectedInferencePromptId}
+        onSavePrompt={handleSavePrompt}
+        onDeletePrompt={handleDeletePrompt}
+        onSelectPrompt={handleSelectPrompt}
+      />
+
       {/* --- Soft Header --- */}
       <header className="z-50 px-4 pt-4 pb-2 md:px-8 md:pt-6">
         <div className="glass-panel rounded-3xl px-6 py-3 flex flex-col md:flex-row items-center justify-between gap-4">
@@ -306,6 +407,23 @@ const App: React.FC = () => {
                              </div>
 
                              <div className="flex gap-2">
+                                {/* Prompt Selector */}
+                                <div className="hidden md:flex items-center gap-2 bg-white/60 rounded-xl px-2 border border-slate-200 shadow-sm">
+                                  <button onClick={() => setIsPromptTunerOpen(true)} className="p-2 hover:bg-white rounded-lg transition-colors text-slate-400 hover:text-sky-500">
+                                    <Settings size={16} />
+                                  </button>
+                                  <div className="h-4 w-px bg-slate-200"></div>
+                                  <select 
+                                    value={selectedDatasetPromptId} 
+                                    onChange={(e) => handleSelectPrompt(e.target.value)}
+                                    className="bg-transparent text-xs font-bold text-slate-600 outline-none w-32 py-2 truncate cursor-pointer"
+                                  >
+                                    {prompts.filter(p => p.type === 'DATASET').map(p => (
+                                      <option key={p.id} value={p.id}>{p.name}</option>
+                                    ))}
+                                  </select>
+                                </div>
+
                                 <button
                                     onClick={() => fileInputRef.current?.click()}
                                     className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold uppercase tracking-wider rounded-xl transition-colors border border-slate-200 shadow-sm"
@@ -358,6 +476,10 @@ const App: React.FC = () => {
                 triggerWord={triggerWord} 
                 isNSFW={isNSFW} 
                 onTriggerError={() => setTriggerError(true)}
+                prompts={prompts}
+                selectedPromptId={selectedInferencePromptId}
+                onSelectPrompt={handleSelectPrompt}
+                onOpenTuner={() => setIsPromptTunerOpen(true)}
             />
         )}
 

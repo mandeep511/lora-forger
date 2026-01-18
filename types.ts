@@ -1,3 +1,4 @@
+
 export enum ProcessingStatus {
   IDLE = 'IDLE',
   PENDING = 'PENDING',
@@ -35,3 +36,20 @@ export interface AppState {
   images: DatasetImage[];
   isGlobalProcessing: boolean;
 }
+
+// --- Prompt Engine Types ---
+
+export type PromptType = 'DATASET' | 'INFERENCE';
+
+export interface PromptTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  content: string; // The raw text with {{variables}}
+  type: PromptType;
+  isDefault: boolean; // If true, cannot be deleted or renamed, edits create copies
+  lastModified: number;
+}
+
+export const DEFAULT_DATASET_TEMPLATE_ID = 'default-dataset-v1';
+export const DEFAULT_INFERENCE_TEMPLATE_ID = 'default-inference-v1';

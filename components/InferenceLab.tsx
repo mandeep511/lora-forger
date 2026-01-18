@@ -1,11 +1,17 @@
+
 import React, { useState, useRef } from "react";
-import { Copy, Sparkles, Upload, X, Wand2, Loader2, Check } from "lucide-react";
+import { Copy, Sparkles, Upload, X, Wand2, Loader2, Check, Settings } from "lucide-react";
 import { generateInferencePrompt } from "../services/geminiService";
+import { PromptTemplate } from "../types";
 
 interface InferenceLabProps {
   triggerWord: string;
   isNSFW: boolean;
   onTriggerError: () => void;
+  prompts: PromptTemplate[];
+  selectedPromptId: string;
+  onSelectPrompt: (id: string) => void;
+  onOpenTuner: () => void;
 }
 
 const STYLES = [
@@ -19,7 +25,15 @@ const STYLES = [
   "Fantasy RPG",
 ];
 
-export const InferenceLab: React.FC<InferenceLabProps> = ({ triggerWord, isNSFW, onTriggerError }) => {
+export const InferenceLab: React.FC<InferenceLabProps> = ({ 
+  triggerWord, 
+  isNSFW, 
+  onTriggerError,
+  prompts,
+  selectedPromptId,
+  onSelectPrompt,
+  onOpenTuner
+}) => {
   const [userText, setUserText] = useState("");
   const [selectedStyle, setSelectedStyle] = useState(STYLES[0]);
   const [referenceImage, setReferenceImage] = useState<File | null>(null);
@@ -54,12 +68,16 @@ export const InferenceLab: React.FC<InferenceLabProps> = ({ triggerWord, isNSFW,
     
     setIsGenerating(true);
     try {
+      const template = prompts.find(p => p.id === selectedPromptId) || prompts.find(p => p.type === 'INFERENCE');
+      if (!template) throw new Error("No prompt template found");
+
       const result = await generateInferencePrompt(
         userText,
         referenceImage,
         triggerWord,
         selectedStyle,
-        isNSFW
+        isNSFW,
+        template
       );
       setGeneratedPrompt(result.prompt);
     } catch (err) {
@@ -80,13 +98,33 @@ export const InferenceLab: React.FC<InferenceLabProps> = ({ triggerWord, isNSFW,
       
       {/* Left: Controls Panel */}
       <div className="flex-1 flex flex-col gap-6 glass-panel rounded-[2rem] p-6 lg:p-8">
-        <div className="flex items-center gap-3 border-b border-pink-100 pb-4">
-          <div className="p-2.5 bg-pink-100 rounded-2xl">
-             <Wand2 size={24} className="text-pink-500" />
+        
+        {/* Header with Prompt Selector */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-pink-100 pb-4 gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-pink-100 rounded-2xl">
+              <Wand2 size={24} className="text-pink-500" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-slate-800 tracking-tight">Prompt Engineer</h2>
+              <p className="text-xs text-slate-400 font-bold">Inference Lab</p>
+            </div>
           </div>
-          <div>
-             <h2 className="text-xl font-bold text-slate-800 tracking-tight">Prompt Engineer</h2>
-             <p className="text-xs text-slate-400 font-bold">Inference Lab</p>
+
+          <div className="flex items-center gap-2 bg-white/60 rounded-xl px-2 py-1 border border-pink-100 shadow-sm self-end sm:self-auto">
+             <button onClick={onOpenTuner} className="p-2 hover:bg-white rounded-lg transition-colors text-slate-400 hover:text-pink-500">
+                <Settings size={16} />
+             </button>
+             <div className="h-4 w-px bg-pink-100"></div>
+             <select 
+               value={selectedPromptId} 
+               onChange={(e) => onSelectPrompt(e.target.value)}
+               className="bg-transparent text-xs font-bold text-slate-600 outline-none w-32 py-1 truncate cursor-pointer"
+             >
+               {prompts.filter(p => p.type === 'INFERENCE').map(p => (
+                 <option key={p.id} value={p.id}>{p.name}</option>
+               ))}
+             </select>
           </div>
         </div>
 
