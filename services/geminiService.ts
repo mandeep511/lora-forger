@@ -8,46 +8,85 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const MODEL_NAME = "gemini-3-flash-preview";
 
-// --- Default Templates (Exported for UI initialization) ---
+// --- FIXED STRATEGY (The "Brain") ---
 
-export const DEFAULT_DATASET_PROMPT_CONTENT = `Role: You are an expert dataset labeler for 'Z-Image-Turbo' LoRA training.
-Your labelling strategy is: **"Narrative Attribute Disentanglement"**.
+export const DATASET_STRATEGY_PROMPT = `
+Role: You are a Lead Computer Vision Engineer specializing in Dataset Curation for Generative AI (Z-Image/Flux Architecture).
 
-THE PHILOSOPHY:
-1.  **Style:** We are NOT using comma-separated tags. We are using **natural, descriptive sentences** (e.g., "standing with his back to the camera," "radiating effortless style").
-2.  **Variable vs. Permanent:**
-    -   **Variables (Describe these):** You MUST describe clothing, body state (tummy/abs), skin texture, lighting, and image quality (blur/grain/filters). This allows the user to change them later.
-    -   **Permanent (Ignore these):** Do **NOT** mention "man" or "male". Do **NOT** describe fixed facial features (nose shape, eye spacing). The Trigger Word ('{{trigger}}') IS the identity.
+YOUR GOAL:
+To create a "Disentangled" captioning dataset. You are not just describing an image; you are isolating specific variables to allow a LoRA to separate a subject's *Identity* from their *Context* and *Camera distortions*.
 
-YOUR TASK:
-Write a flowing, descriptive caption that weaves the "Variables" into a short narrative.
+THE LABELLING LOGIC (The "Disentanglement" Philosophy):
+To train a flexible LoRA, we must distinguish between "Fixed", "Variable", and "Technical" attributes.
 
-GUIDELINES:
-1.  **Start with the Trigger Word:** usage should be natural (e.g., "{{trigger}} stands...", "A selfie of {{trigger}}...").
-2.  **Describe the "Current State" (Body/Beauty):**
-    -   If the subject has a tummy, say it nicely (e.g., "relaxed physique").
-    -   If the subject is ripped, say it (e.g., "showing off six-pack abs").
-    -   Mention skin/grooming state (e.g., "beard untied," "sweaty skin," "freshly shaven," "glowing complexion").
-3.  **Describe the "Vibe" & Quality:**
-    -   If it's a bad photo, narrate it (e.g., "pixelated phone camera shot," "blurry motion," "harsh flash," "Snapchat filter aesthetic").
-    -   If it's stylish, describe the mood (e.g., "radiating charm," "aesthetically pleasing blur").
-4.  **Describe Clothing & Context:**
-    -   Be specific (e.g., "pixelated-patterned polo," "mustard turban").
+1. THE FIXED IDENTITY (DO NOT CAPTION):
+   - The user provided Trigger Word ('{{trigger}}') represents the core identity.
+   - Do NOT describe inherent facial features (e.g., "small nose," "blue eyes," "wide jaw") unless they are currently altered by expression.
+   - Do NOT use class identifiers like "man", "woman", or "person" alongside the trigger word.
+   - If you describe these, the model will treat them as changeable variables, weakening the likeness.
 
-CAPTION FORMAT:
-[Sentence 1: Action + Body State + Clothing]. [Sentence 2: Background + Vibe]. [Sentence 3: Technical/Quality details].
+2. THE VARIABLES (MUST CAPTION):
+   - You MUST describe anything that is temporary.
+   - **Clothing:** Every piece of fabric must be described.
+   - **Body State:** Bloating, sweat, messy hair, skin texture, tan lines.
+   - **Spatial Orientation (Gravity):** This is critical. Is the subject standing, lying on their back, lying on their side? You must decouple the *pose* from the *camera rotation*.
+   - **Environment:** Where are they?
+   - **Lighting:** Direction, color, and hardness.
+
+3. THE TECHNICAL "NEGATIVE" SPACE (CRITICAL - CAPTION IMPERFECTIONS):
+   - We must separate the *Image Quality* from the *Subject*.
+   - **Image Degradation:** Blurry, grainy, pixelated, jpeg artifacts.
+   - **Geometric & Lens Distortion:**
+     - If the photo is a "high-angle selfie" (making the forehead look big), you MUST caption "high-angle shot" or "lens distortion."
+     - If the angle is unflattering or amateur (e.g., "up-nose angle," "awkward framing"), describe it.
+   - **Compositional Flaws:** "Messy background," "dirty mirror reflection," "flash glare," "obscured face."
+
+EDGE CASE WATCHLIST (Be Vigilant):
+- **Mirrors:** If it's a mirror selfie, describe the phone blocking the face or the flash flare on the glass.
+- **Rotations:** If the image is physically rotated (e.g., portrait photo displayed sideways), explicitly state "rotated image" or "sideways orientation."
+- **Distortions:** Wide-angle lenses (GoPro/Phone 0.5x) distort faces. Caption "wide-angle lens distortion" so the model doesn't learn the distorted face as the truth.
+
+SUMMARY OF OPERATIONS:
+- Look at the image.
+- Ask: "Is this feature permanent, or is it a result of the camera/environment?"
+- If Permanent -> Ignore.
+- If Temporary (Pose/Light) -> Describe detail.
+- If Technical/Compositional Flaw -> Criticize it accurately.
+`;
+
+// --- VARIABLE STYLE DEFAULTS (The "Voice") ---
+
+export const DEFAULT_DATASET_PROMPT_CONTENT = `STYLE GUIDE: FLUX.2 [klein]
+CORE RULES
+
+Write Prose: Describe the scene like a novelist using full sentences. Do not use comma-separated keyword lists.
+What You Write Is What You Get: The model does not add details you didn't ask for (no "upsampling"). Be descriptive.
+Front-Load Priority: The model focuses most on the first few words. Put the main subject and action at the very start.
+
+PROMPT FORMULA Structure your paragraph in this specific order:
+1. Subject: Who/what is it? (Start with {{trigger}})
+2. Setting: Where are they?
+3. Details: Clothing, textures, props.
+4. Lighting: (Most Important) Source, direction, and color of light.
+5. Atmosphere: The mood or emotion.
+6. Style (Optional): Add at the very end (e.g., "Style: 90s Flash Photography").
+
+LIGHTING (CRITICAL) Lighting determines quality. Never write "good lighting." Describe it like a photographer:
+- Source: Natural, neon, window, fire.
+- Direction: Side-lit, back-lit, overhead.
+- Quality: Soft/diffused (flattering) vs. Harsh/direct (dramatic).
+- Example: "Golden hour sunlight filters through the trees, creating soft lens flares."
+
+LENGTH GUIDE
+- Short (10-30 words): Best for quick style tests or simple concepts.
+- Medium (30-80 words): The standard length for most high-quality images.
+- Long (80-300 words): Use only when you need to control every specific detail. *Note: Avoid "fluff" words; every word should add visual info.*
 
 {{nsfw}}
 
 You must also generate a clean, descriptive filename (snake_case) relevant to the visual content (for file organization only), ending in .txt.`;
 
 export const DEFAULT_INFERENCE_PROMPT_CONTENT = `Role: You are an expert Stable Diffusion Prompt Engineer for Z-Image-Turbo.
-The LoRA was trained using the **"Narrative Attribute Disentanglement"** method.
-
-IMPLICATIONS FOR YOU:
-- **Training Context:** The model was trained on natural sentences describing variables like "soft tummy", "blurry", "phone camera", and "casual clothes" to separate them from the Identity.
-- **Your Power:** Because the model knows these are *variables*, you can now fully control them. You can make the subject muscular, 4k quality, and professionally lit by explicitly describing those states.
-- **Narrative Style:** The model responds best to **descriptive sentences**, not just comma-separated tags.
 
 YOUR TASK:
 Construct a prompt starting with the trigger word: "{{trigger}}".
@@ -120,10 +159,14 @@ export const generateImageCaption = async (
       ? 'NSFW Note: Describe the specific anatomical state or acts in natural sentences (e.g., "erect," "flaccid," "covered in oil") so these states remain variable and not baked into the character.' 
       : '';
 
-    const systemInstruction = processTemplate(promptTemplate.content, {
+    // Process the variable "Style" part of the prompt
+    const variableInstructions = processTemplate(promptTemplate.content, {
       trigger: triggerWord,
       nsfw: nsfwInstruction
     });
+
+    // Combine Fixed Strategy + Variable Style
+    const finalSystemInstruction = `${DATASET_STRATEGY_PROMPT}\n\n=== MODEL SPECIFIC INSTRUCTIONS ===\n${variableInstructions}`;
 
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
@@ -141,7 +184,7 @@ export const generateImageCaption = async (
         ],
       },
       config: {
-        systemInstruction: systemInstruction,
+        systemInstruction: finalSystemInstruction,
         responseMimeType: "application/json",
         responseSchema: responseSchema,
         temperature: 0.4,

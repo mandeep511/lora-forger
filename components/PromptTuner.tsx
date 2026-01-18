@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect } from "react";
-import { X, Plus, Trash2, Save, Copy, AlertCircle, RefreshCw, PenLine, Lock } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { X, Plus, Trash2, Save, Copy, AlertCircle, RefreshCw, PenLine, Lock, Eye, EyeOff, BrainCircuit, Check } from "lucide-react";
 import { PromptTemplate, PromptType } from "../types";
 import { v4 as uuidv4 } from "uuid";
+import { DATASET_STRATEGY_PROMPT } from "../services/geminiService";
 
 interface PromptTunerProps {
   isOpen: boolean;
@@ -41,6 +42,8 @@ export const PromptTuner: React.FC<PromptTunerProps> = ({
   const [editedName, setEditedName] = useState("");
   const [editedContent, setEditedContent] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [showStrategy, setShowStrategy] = useState(false);
 
   // Filter prompts by current type (Dataset vs Inference)
   const currentTypePrompts = prompts.filter(p => p.type === type);
@@ -58,8 +61,41 @@ export const PromptTuner: React.FC<PromptTunerProps> = ({
       setEditedName(activeTemplate.name);
       setEditedContent(activeTemplate.content);
       setHasUnsavedChanges(false);
+      setIsSaving(false);
     }
   }, [activeTemplate, selectedId]);
+
+  // --- Auto Save Logic ---
+  const saveChanges = useCallback((overrideName?: string, overrideContent?: string) => {
+    if (!activeTemplate || activeTemplate.isDefault) return;
+    
+    setIsSaving(true);
+    const updatedPrompt: PromptTemplate = {
+      ...activeTemplate,
+      name: overrideName ?? editedName,
+      content: overrideContent ?? editedContent,
+      lastModified: Date.now()
+    };
+    
+    // Simulate network delay for effect
+    setTimeout(() => {
+        onSavePrompt(updatedPrompt);
+        setHasUnsavedChanges(false);
+        setIsSaving(false);
+    }, 600);
+
+  }, [activeTemplate, editedName, editedContent, onSavePrompt]);
+
+  useEffect(() => {
+    // Only auto-save if it's NOT a default template and there are changes
+    if (hasUnsavedChanges && activeTemplate && !activeTemplate.isDefault) {
+      const timer = setTimeout(() => {
+        saveChanges();
+      }, 3000); // 3 seconds auto-save
+      return () => clearTimeout(timer);
+    }
+  }, [hasUnsavedChanges, activeTemplate, saveChanges]);
+
 
   const handleContentChange = (val: string) => {
     setEditedContent(val);
@@ -71,7 +107,7 @@ export const PromptTuner: React.FC<PromptTunerProps> = ({
     setHasUnsavedChanges(true);
   };
 
-  const handleSave = () => {
+  const handleManualSave = () => {
     if (!activeTemplate) return;
 
     // Logic: If Default, create copy. If Custom, update.
@@ -88,21 +124,15 @@ export const PromptTuner: React.FC<PromptTunerProps> = ({
       setSelectedId(newPrompt.id); // Switch to new
       onSelectPrompt(newPrompt.id);
     } else {
-      onSavePrompt({
-        ...activeTemplate,
-        name: editedName,
-        content: editedContent,
-        lastModified: Date.now()
-      });
+      saveChanges();
     }
-    setHasUnsavedChanges(false);
   };
 
   const handleCreateNew = () => {
     const newPrompt: PromptTemplate = {
       id: uuidv4(),
       name: "Untitled System Prompt",
-      content: "Role: You are an AI assistant...\n\nRules:\n1. Use {{trigger}} to insert the trigger word.",
+      content: "STYLE GUIDE: My Custom Style\n\n1. Always describe the lighting.\n2. Start with {{trigger}}.\n3. Keep it concise.",
       type: type,
       isDefault: false,
       lastModified: Date.now()
@@ -113,7 +143,6 @@ export const PromptTuner: React.FC<PromptTunerProps> = ({
   };
 
   const insertVariable = (variable: string) => {
-    // Simple append for now, ideal would be cursor insertion
     setEditedContent(prev => prev + ` ${variable} `);
     setHasUnsavedChanges(true);
   };
@@ -122,7 +151,7 @@ export const PromptTuner: React.FC<PromptTunerProps> = ({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="bg-white/90 backdrop-blur-xl w-full max-w-5xl h-[85vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-white/50">
+      <div className="bg-white/90 backdrop-blur-xl w-full max-w-6xl h-[90vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden border border-white/50">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white/50">
@@ -132,7 +161,7 @@ export const PromptTuner: React.FC<PromptTunerProps> = ({
              </div>
              <div>
                <h2 className="text-lg font-bold text-slate-800">Prompt Tuner</h2>
-               <p className="text-xs text-slate-500 font-semibold">Customize internal AI instructions for {type === 'DATASET' ? 'Captioning' : 'Inference'}</p>
+               <p className="text-xs text-slate-500 font-semibold">Customize {type === 'DATASET' ? 'Captioning' : 'Inference'} Logic</p>
              </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
@@ -200,27 +229,31 @@ export const PromptTuner: React.FC<PromptTunerProps> = ({
                       placeholder="Untitled Prompt"
                    />
                 </div>
-                <div className="flex items-center gap-2">
-                   {hasUnsavedChanges && (
-                     <span className="text-xs font-bold text-amber-500 animate-pulse mr-2">Unsaved Changes</span>
+                <div className="flex items-center gap-3">
+                   
+                   {/* Auto-save Status */}
+                   {!activeTemplate?.isDefault && (
+                       <div className="flex items-center gap-2 px-3">
+                           {isSaving ? (
+                               <>
+                                <RefreshCw size={12} className="animate-spin text-slate-400" />
+                                <span className="text-xs font-medium text-slate-400">Saving...</span>
+                               </>
+                           ) : hasUnsavedChanges ? (
+                                <span className="text-xs font-medium text-amber-500">Unsaved</span>
+                           ) : (
+                                <>
+                                <Check size={14} className="text-emerald-500" />
+                                <span className="text-xs font-medium text-emerald-500">Saved</span>
+                                </>
+                           )}
+                       </div>
                    )}
+
+                   <div className="h-6 w-px bg-slate-200 mx-2"></div>
+
                    <button 
-                      onClick={() => {
-                        // Revert
-                        if (activeTemplate) {
-                          setEditedContent(activeTemplate.content);
-                          setEditedName(activeTemplate.name);
-                          setHasUnsavedChanges(false);
-                        }
-                      }}
-                      disabled={!hasUnsavedChanges}
-                      className="p-2 text-slate-400 hover:text-slate-600 disabled:opacity-30 transition-colors"
-                      title="Reset Changes"
-                   >
-                     <RefreshCw size={20} />
-                   </button>
-                   <button 
-                      onClick={handleSave}
+                      onClick={handleManualSave}
                       disabled={!hasUnsavedChanges && !activeTemplate?.isDefault}
                       className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold text-white transition-all shadow-lg ${
                          activeTemplate?.isDefault 
@@ -229,37 +262,63 @@ export const PromptTuner: React.FC<PromptTunerProps> = ({
                       }`}
                    >
                       {activeTemplate?.isDefault ? <Copy size={16} /> : <Save size={16} />}
-                      {activeTemplate?.isDefault ? 'Duplicate to Edit' : 'Save Changes'}
+                      {activeTemplate?.isDefault ? 'Duplicate to Edit' : 'Save Now'}
                    </button>
                 </div>
              </div>
 
              {/* Content Area */}
              <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
-                <div className="flex-1 relative">
-                  <textarea 
-                    value={editedContent}
-                    onChange={(e) => handleContentChange(e.target.value)}
-                    disabled={activeTemplate?.isDefault}
-                    className="w-full h-full p-6 resize-none outline-none text-sm font-mono leading-relaxed text-slate-600 bg-slate-50/30"
-                    placeholder="Enter system prompt instructions here..."
-                    spellCheck={false}
-                  />
-                  {activeTemplate?.isDefault && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-slate-100/50 backdrop-blur-[1px] cursor-not-allowed z-10">
-                       <div className="bg-white px-6 py-4 rounded-2xl shadow-xl flex flex-col items-center gap-2 border border-slate-100">
-                          <Lock size={24} className="text-amber-500" />
-                          <p className="text-sm font-bold text-slate-600">Default Prompt is Locked</p>
-                          <button onClick={handleSave} className="text-xs font-bold text-white bg-amber-500 px-4 py-2 rounded-lg hover:bg-amber-600 transition-colors">
-                            Click to Duplicate & Edit
-                          </button>
-                       </div>
-                    </div>
+                <div className="flex-1 relative flex flex-col">
+                  
+                  {/* Strategy Context Block */}
+                  {type === 'DATASET' && (
+                      <div className="border-b border-slate-100 bg-slate-50/50">
+                        <button 
+                            onClick={() => setShowStrategy(!showStrategy)}
+                            className="w-full flex items-center justify-between px-6 py-3 text-xs font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                        >
+                            <div className="flex items-center gap-2">
+                                <BrainCircuit size={16} className="text-indigo-500" />
+                                <span>Includes "Disentanglement" Strategy Context</span>
+                            </div>
+                            {showStrategy ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                        {showStrategy && (
+                            <div className="px-6 py-4 bg-slate-100/50 border-t border-slate-100 max-h-48 overflow-y-auto shadow-inner">
+                                <pre className="text-[10px] text-slate-500 font-mono whitespace-pre-wrap leading-relaxed">
+                                    {DATASET_STRATEGY_PROMPT}
+                                </pre>
+                            </div>
+                        )}
+                      </div>
                   )}
+
+                  <div className="flex-1 relative">
+                    <textarea 
+                        value={editedContent}
+                        onChange={(e) => handleContentChange(e.target.value)}
+                        disabled={activeTemplate?.isDefault}
+                        className="w-full h-full p-6 resize-none outline-none text-sm font-mono leading-relaxed text-slate-600 bg-white"
+                        placeholder="Enter system prompt instructions here..."
+                        spellCheck={false}
+                    />
+                    {activeTemplate?.isDefault && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-slate-100/50 backdrop-blur-[1px] cursor-not-allowed z-10">
+                        <div className="bg-white px-6 py-4 rounded-2xl shadow-xl flex flex-col items-center gap-2 border border-slate-100">
+                            <Lock size={24} className="text-amber-500" />
+                            <p className="text-sm font-bold text-slate-600">Default Prompt is Locked</p>
+                            <button onClick={handleManualSave} className="text-xs font-bold text-white bg-amber-500 px-4 py-2 rounded-lg hover:bg-amber-600 transition-colors">
+                                Click to Duplicate & Edit
+                            </button>
+                        </div>
+                        </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Variables Sidebar */}
-                <div className="w-48 bg-white border-l border-slate-100 p-4 overflow-y-auto">
+                <div className="w-48 bg-white border-l border-slate-100 p-4 overflow-y-auto shadow-[-4px_0_24px_-10px_rgba(0,0,0,0.05)] z-20">
                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Variables</h3>
                    <div className="flex flex-col gap-2">
                       {VARIABLES_MAP[type].map((v) => (
@@ -281,7 +340,7 @@ export const PromptTuner: React.FC<PromptTunerProps> = ({
                         <span className="text-[10px] font-bold text-amber-600 uppercase">Tip</span>
                       </div>
                       <p className="text-[10px] text-amber-700/80 leading-relaxed">
-                        Variables are replaced automatically before generation. Don't remove {type === 'DATASET' ? '{{trigger}}' : '{{trigger}}'}!
+                        Variables are replaced automatically. The "Strategy" (logic) is pre-pended to your prompt.
                       </p>
                    </div>
                 </div>

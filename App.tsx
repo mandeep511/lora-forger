@@ -55,7 +55,7 @@ const App: React.FC = () => {
       const defaults: PromptTemplate[] = [
         {
           id: DEFAULT_DATASET_TEMPLATE_ID,
-          name: 'Default (Z-Image-Turbo)',
+          name: 'Flux [Klein] Style Guide',
           content: DEFAULT_DATASET_PROMPT_CONTENT,
           type: 'DATASET',
           isDefault: true,
