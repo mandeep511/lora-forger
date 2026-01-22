@@ -1,3 +1,5 @@
+ ![inference-page](image.png)
+
 ## Run Locally
 
 **Prerequisites:**  Node.js
